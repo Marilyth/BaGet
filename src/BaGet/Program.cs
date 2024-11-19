@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using BaGet.Core;
 using BaGet.Web;
@@ -14,7 +16,20 @@ namespace BaGet
     {
         public static async Task Main(string[] args)
         {
-            var host = CreateHostBuilder(args).Build();
+            Dictionary<string, string> namedArguments = new Dictionary<string, string>();
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i].StartsWith("-"))
+                {
+                    string key = args[i].TrimStart('-');
+                    string value = args[i + 1];
+
+                    namedArguments.Add(key, value);
+                }
+            }
+
+            var host = CreateHostBuilder(args, namedArguments).Build();
             if (!host.ValidateStartupOptions())
             {
                 return;
@@ -45,6 +60,7 @@ namespace BaGet
             });
 
             app.Option("--urls", "The URLs that BaGet should bind to.", CommandOptionType.SingleValue);
+            app.Option("--cert-location", "The location of the certificate to use for HTTPS.", CommandOptionType.SingleValue);
 
             app.OnExecuteAsync(async cancellationToken =>
             {
@@ -55,7 +71,7 @@ namespace BaGet
             await app.ExecuteAsync(args);
         }
 
-        public static IHostBuilder CreateHostBuilder(string[] args)
+        public static IHostBuilder CreateHostBuilder(string[] args, Dictionary<string, string> namedArguments)
         {
             return Host
                 .CreateDefaultBuilder(args)
@@ -70,6 +86,19 @@ namespace BaGet
                 })
                 .ConfigureWebHostDefaults(web =>
                 {
+                    if(namedArguments.ContainsKey("cert-location"))
+                    {
+                        CertificateLoader certificateLoader = new CertificateLoader(namedArguments["cert-location"]);
+
+                        web.UseKestrel(options =>
+                        {
+                            options.ConfigureHttpsDefaults(https =>
+                            {
+                                https.ServerCertificateSelector = (context, name) => certificateLoader.GetCertificate();
+                            });
+                        });
+                    }
+
                     web.ConfigureKestrel(options =>
                     {
                         // Remove the upload limit from Kestrel. If needed, an upload limit can
